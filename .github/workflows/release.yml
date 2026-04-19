@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    runs-on: macos-13
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show Toolchain
+        run: |
+          sw_vers
+          swift --version
+
+      - name: Build App
+        run: ./scripts/build_app.sh
+
+      - name: Verify Intel Binary
+        run: |
+          file dist/NetSpeed.app/Contents/MacOS/NetSpeed
+          archs="$(lipo -archs dist/NetSpeed.app/Contents/MacOS/NetSpeed)"
+          if [[ "$archs" != *"x86_64"* ]]; then
+            echo "Expected x86_64 arch in app binary, got: $archs" >&2
+            exit 1
+          fi
+
+      - name: Package Artifacts
+        run: |
+          version="${GITHUB_REF_NAME}"
+          asset="NetSpeed-${version}-macos-intel.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/NetSpeed.app "dist/${asset}"
+          shasum -a 256 "dist/${asset}" > "dist/checksums.txt"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/NetSpeed-${{ github.ref_name }}-macos-intel.zip
+            dist/checksums.txt
