@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
       - "*.*.*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,6 +20,8 @@ concurrency:
 jobs:
   build-and-release:
     runs-on: macos-13
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,17 +45,29 @@ jobs:
             exit 1
           fi
 
-      - name: Package Artifacts
+      - name: Resolve Release Tag
         run: |
-          version="${GITHUB_REF_NAME}"
-          asset="NetSpeed-${version}-macos-intel.zip"
-          ditto -c -k --sequesterRsrc --keepParent dist/NetSpeed.app "dist/${asset}"
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            version="${{ github.event.release.tag_name }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          echo "VERSION_TAG=${version}" >> "$GITHUB_ENV"
+          echo "Using tag: ${version}"
+
+      - name: Package DMG
+        run: |
+          asset="NetSpeed-${VERSION_TAG}-macos-intel.dmg"
+          hdiutil create -volname "NetSpeed" -srcfolder dist/NetSpeed.app -ov -format UDZO "dist/${asset}"
           shasum -a 256 "dist/${asset}" > "dist/checksums.txt"
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/NetSpeed-${{ github.ref_name }}-macos-intel.zip
-            dist/checksums.txt
+      - name: Create Or Update Release
+        run: |
+          asset="dist/NetSpeed-${VERSION_TAG}-macos-intel.dmg"
+          if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
+            gh release upload "${VERSION_TAG}" "${asset}" "dist/checksums.txt" --clobber
+          else
+            gh release create "${VERSION_TAG}" "${asset}" "dist/checksums.txt" \
+              --title "${VERSION_TAG}" \
+              --generate-notes
+          fi
