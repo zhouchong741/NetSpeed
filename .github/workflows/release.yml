@@ -61,13 +61,23 @@ jobs:
           hdiutil create -volname "NetSpeed" -srcfolder dist/NetSpeed.app -ov -format UDZO "dist/${asset}"
           shasum -a 256 "dist/${asset}" > "dist/checksums.txt"
 
+      - name: Build Release Notes
+        run: |
+          cat > dist/release-notes.md <<EOF
+          v${VERSION_TAG}
+
+          - NetSpeed-${VERSION_TAG}-macos-intel.dmg
+          - checksums.txt
+          EOF
+
       - name: Create Or Update Release
         run: |
           asset="dist/NetSpeed-${VERSION_TAG}-macos-intel.dmg"
           if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
             gh release upload "${VERSION_TAG}" "${asset}" "dist/checksums.txt" --clobber
+            gh release edit "${VERSION_TAG}" --title "${VERSION_TAG}" --notes-file dist/release-notes.md
           else
             gh release create "${VERSION_TAG}" "${asset}" "dist/checksums.txt" \
               --title "${VERSION_TAG}" \
-              --generate-notes
+              --notes-file dist/release-notes.md
           fi
